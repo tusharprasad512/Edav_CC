@@ -1,0 +1,263 @@
+---
+title: "EDAV Community Project - Tushar Prasad & Anusree Mondal"
+output: html_notebook
+---
+
+```{r}
+library(ggplot2)
+library(rlang)
+library(ggforce)
+library(ggiraph)
+library(plotly)
+library(GDAdata)
+library(hexbin)
+library(tidyverse)
+```
+
+```{r}
+ggplot(SpeedSki, aes(Year, Speed)) +
+geom_hex(binwidth = binwidth)
+```
+
+```{r}
+ggplot(SpeedSki, aes(Year, Speed)) +
+geom_hex(binwidth = binwidth) +
+geom_point(data = SpeedSki,aes(Year,round(Speed,1)))
+```
+
+
+```{r}
+ggplot(SpeedSki, aes(Year, Speed)) +
+geom_hex(binwidth = binwidth, alpha = 0.4) +
+geom_point(data = SpeedSki,aes(Year,round(Speed,1)))
+```
+
+```{r}
+ggplot(SpeedSki, aes(Year, Speed)) +
+geom_hex(binwidth = binwidth, alpha = 0.4) +
+geom_point(data = SpeedSki,aes(Year,round(Speed,1))) +
+scale_fill_viridis_c()
+```
+
+
+```{r}
+# Manually Fixing aspect ratio - Method 1
+
+
+p <- ggplot(SpeedSki, aes(Year, Speed)) +
+  geom_hex(binwidth = c(10, 10), alpha = 0.4) +
+  geom_point(size = 1.5) +
+  scale_fill_viridis_c()
+
+# Adjust the aspect ratio manually (10 units x 10 units)
+#to ensure the plot maintains a 1:1 aspect ratio  
+p + coord_fixed(ratio = 10/10)
+```
+```{r}
+#adjusted x and y axis limits
+
+p <- ggplot(SpeedSki, aes(Year, Speed)) +
+  geom_hex(binwidth = c(10, 10), alpha = 0.4) +
+  geom_point(size = 1.5) +
+  scale_fill_viridis_c()
+
+# Adjust the plot limits and expand to match the desired bin size
+p + scale_x_continuous(limits = c(min(SpeedSki$Year), max(SpeedSki$Year) + 10)) +
+    scale_y_continuous(limits = c(min(SpeedSki$Speed), max(SpeedSki$Speed) + 10))
+```
+
+```{r}
+scales1 <- function(df_col) {
+    max(df_col) - min(df_col)
+}
+```
+
+
+```{r}
+hex_binwidth <- function(bins = 30, df) {
+  c(
+    scales1(df$x) / bins,
+    scales1(df$y) / bins
+  )
+}
+```
+
+
+```{r}
+
+round_any = function(x, accuracy, f=round){f(x/ accuracy) * accuracy}
+
+hex_bounds <- function(x, binwidth) {
+  c(
+    round_any(min(x), binwidth, floor) - 1e-6,
+    round_any(max(x), binwidth, ceiling) + 1e-6
+  )
+}
+```
+
+
+```{r}
+hexBinSummarise <- function(x, y, z, binwidth, fun = mean, fun.args = list(), drop = TRUE) {
+  if (length(binwidth) == 1) {
+    binwidth <- rep(binwidth, 2)
+  }
+
+  # Convert binwidths into bounds + nbins
+  xbnds <- hex_bounds(x, binwidth[1])
+  xbins <- diff(xbnds) / binwidth[1]
+
+  
+  ybnds <- hex_bounds(y, binwidth[2])
+  ybins <- diff(ybnds) / binwidth[2]
+
+  
+# Call hexbin
+  hb <- hexbin::hexbin(
+    x, xbnds = xbnds, xbins = xbins,
+    y, ybnds = ybnds, shape = ybins / xbins,
+    IDs = TRUE
+  )
+
+  value <- inject(tapply(z, hb@cID, fun, !!!fun.args))
+
+  # Convert to data frame
+  out <- hexbin::hcell2xy(hb)
+  out$value <- as.vector(value)
+  out$width <- binwidth[1]
+  out$height <- binwidth[2]
+  
+  dx <- binwidth[1] /2
+  dy <- binwidth[2] / sqrt(3) / 2 
+  
+  hexC <- hexbin::hexcoords(dx, dy, n = 1)
+  hexdata <- data.frame(x=out$x,y=out$y)[rep(seq_len(length(out$x)), each = 6), c("x", "y")]
+  hexdata$x <- rep.int(hexC$x, length(out$x)) + hexdata$x
+  hexdata$y <- rep.int(hexC$y, length(out$y)) + hexdata$y
+
+  out$hexdata_x <- as.vector(hexdata$x)
+  out$hexdata_y <- as.vector(hexdata$y)
+  
+  if (drop) out <- stats::na.omit(out)
+  out
+}
+```
+
+
+```{r}
+df <- data.frame(x=SpeedSki$Year,y=SpeedSki$Speed)
+binwidth <- c(10,10)
+binwidth <- binwidth #%||% hex_binwidth(bins=10, df) 
+wt <- df$weight %||% rep(1L, nrow(df))
+out <- hexBinSummarise(df$x, df$y, wt, binwidth, sum)
+CornerPoints <- data.frame(x=out$hexdata_x,y=out$hexdata_y)
+
+hex_plot <- ggplot(SpeedSki, aes(Year, Speed)) +
+geom_hex(binwidth = binwidth, alpha = 0.4) +
+geom_point_interactive(data = CornerPoints, aes(x = x, y = y, tooltip = paste("x:", round(x,1), "<br>y:", round(y,1))), color = "red", size = 1) +
+geom_point_interactive(data = SpeedSki,aes(tooltip = paste("x:", Year, "<br>y:", round(Speed,1)))) +
+scale_fill_viridis_c()
+
+# Render the plot with interactivity
+girafe(ggobj = hex_plot, width_svg = 8, height_svg = 8)
+
+```
+
+
+
+```{r}
+p <- ggplot(SpeedSki, aes(Year, Speed)) +
+  geom_hex(binwidth = c(10, 10), alpha = 0.4) +
+  geom_point(size = .5) +
+  scale_fill_viridis_c()
+
+# Extract the hexagon data
+hex_data <- ggplot_build(p)$data[[1]]
+hex_data
+
+# Calculate the hexagon vertices
+hex_data <- hex_data %>%
+  mutate(
+    x_center = x,         # Center x-coordinate
+    y_center = y,         # Center y-coordinate
+    s = width / 2,        # Half of width
+    h = height / 2        # Half of height
+  ) %>%
+  mutate(
+    x1 = x_center + s,
+    y1 = y_center + h / sqrt(3),
+    x2 = x_center,
+    y2 = y_center + h * 2 / sqrt(3),
+    x3 = x_center - s,
+    y3 = y_center + h / sqrt(3),
+    x4 = x_center - s,
+    y4 = y_center - h / sqrt(3),
+    x5 = x_center,
+    y5 = y_center - h * 2 / sqrt(3),
+    x6 = x_center + s,
+    y6 = y_center - h / sqrt(3)
+  )
+hex_data
+
+# Randomly select 1 hexagon
+set.seed(123)  # For reproducibility
+selected_hexagon <- sample(1:nrow(hex_data), 1)
+
+# Add labels for the vertices of the selected hexagon
+p +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x1, y = y1, label = paste("(", round(x1, 1), ", ", round(y1, 1), ")"), color = "X"), vjust = -1, nudge_x = 0.01, nudge_y = 0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x2, y = y2, label = paste("(", round(x2, 1), ", ", round(y2, 1), ")"), color = "X"), vjust = 1, nudge_x = 0.01, nudge_y = 0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x3, y = y3, label = paste("(", round(x3, 1), ", ", round(y3, 1), ")"), color = "X"), vjust = -1, nudge_x = -0.01, nudge_y = -0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x4, y = y4, label = paste("(", round(x4, 1), ", ", round(y4, 1), ")"), color = "Y"), vjust = 1, nudge_x = -0.01, nudge_y = -0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x5, y = y5, label = paste("(", round(x5, 1), ", ", round(y5, 1), ")"), color = "Y"), vjust = -1, nudge_x = 0.01, nudge_y = 0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x6, y = y6, label = paste("(", round(x6, 1), ", ", round(y6, 1), ")"), color = "Y"), vjust = 1, nudge_x = 0.01, nudge_y = 0.01, size = 2) +
+  scale_color_manual(values = c("X" = "blue", "Y" = "blue"))
+```
+```{r}
+p <- ggplot(SpeedSki, aes(Year, Speed)) +
+  geom_hex(binwidth = c(10, 15), alpha = 0.4) +
+  geom_point(size = .5) +
+  scale_fill_viridis_c()
+
+# Extract the hexagon data
+hex_data <- ggplot_build(p)$data[[1]]
+hex_data
+
+# Calculate the hexagon vertices
+hex_data <- hex_data %>%
+  mutate(
+    x_center = x,         # Center x-coordinate
+    y_center = y,         # Center y-coordinate
+    s = width / 2,        # Half of the width
+    h = height / 2        # Half of the height
+  ) %>%
+  mutate(
+    x1 = x_center + s,
+    y1 = y_center + h / sqrt(3),
+    x2 = x_center,
+    y2 = y_center + h * 2 / sqrt(3),
+    x3 = x_center - s,
+    y3 = y_center + h / sqrt(3),
+    x4 = x_center - s,
+    y4 = y_center - h / sqrt(3),
+    x5 = x_center,
+    y5 = y_center - h * 2 / sqrt(3),
+    x6 = x_center + s,
+    y6 = y_center - h / sqrt(3)
+  )
+hex_data
+
+# Randomly select 1 hexagon
+set.seed(123)  # For reproducibility
+selected_hexagon <- sample(1:nrow(hex_data), 1)
+
+# Add labels for the vertices of the selected hexagon
+p +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x1, y = y1, label = paste("(", round(x1, 1), ", ", round(y1, 1), ")"), color = "X"), vjust = -1, nudge_x = 0.01, nudge_y = 0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x2, y = y2, label = paste("(", round(x2, 1), ", ", round(y2, 1), ")"), color = "X"), vjust = 1, nudge_x = 0.01, nudge_y = 0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x3, y = y3, label = paste("(", round(x3, 1), ", ", round(y3, 1), ")"), color = "X"), vjust = -1, nudge_x = -0.01, nudge_y = -0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x4, y = y4, label = paste("(", round(x4, 1), ", ", round(y4, 1), ")"), color = "Y"), vjust = 1, nudge_x = -0.01, nudge_y = -0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x5, y = y5, label = paste("(", round(x5, 1), ", ", round(y5, 1), ")"), color = "Y"), vjust = -1, nudge_x = 0.01, nudge_y = 0.01, size = 2) +
+  geom_text(data = hex_data[selected_hexagon, ], aes(x = x6, y = y6, label = paste("(", round(x6, 1), ", ", round(y6, 1), ")"), color = "Y"), vjust = 1, nudge_x = 0.01, nudge_y = 0.01, size = 2) +
+  scale_color_manual(values = c("X" = "blue", "Y" = "blue")) 
+```
+
