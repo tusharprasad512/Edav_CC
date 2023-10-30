@@ -15,6 +15,9 @@ library(tidyverse)
 ```
 
 ```{r}
+
+binwidth = c(10, 10)
+
 ggplot(SpeedSki, aes(Year, Speed)) +
 geom_hex(binwidth = binwidth)
 ```
