@@ -1,6 +1,9 @@
 ---
-title: "EDAV Community Project - Tushar Prasad & Anusree Mondal"
-output: html_notebook
+title: "EDAV Community Project"
+By:-
+
+Anusree Mondal Rakhi (ar4636)
+Tushar Prasad (tp2802)
 ---
 
 ```{r}
